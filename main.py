@@ -74,6 +74,7 @@ class CalTab(BoxLayout):
 
     # rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
+    date_in_view = ObjectProperty()
 
     def __init__(self, **kwargs):
         super(CalTab, self).__init__(**kwargs)
@@ -91,7 +92,22 @@ class CalTab(BoxLayout):
         self.ids.calview.go_today()
 
     def choose_date(self, *args):
+        month_name = calendar.month_name[self.date_in_view.month]
+        self.date_picker.ids.month.text = month_name
+        self.date_picker.ids.year.text = str(self.date_in_view.year)
         self.date_picker.open()
+        self.date_picker.y = self.y + self.height / 1.5
+
+    def goto_date(self, *args):
+        month = self.date_picker.ids.month.text
+        year = self.date_picker.ids.year.text
+
+    def on_size(self, *args):
+        self.date_picker.y = self.y + self.height / 1.5
+        if self.width > self.height:
+            self.date_picker.size_hint = (.3, .25)
+        elif self.height > self.width:
+            self.date_picker.size_hint = (.5, .2)
 
 
 class CalView(BoxLayout):

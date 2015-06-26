@@ -7,7 +7,7 @@
 
 <CalTab>:
     id: caltab
-    # current_month: calview.current_month
+    date_in_view: calview.date_in_view
     BoxLayout:
         canvas:
             Color:
@@ -63,13 +63,19 @@
     cols: 4
 
 <GoToDaTe>:
-    size_hint: .7, .7
+    padding: 100,200,100,200
+    title: 'Choose date'
+    title_align: 'center'
+    separator_color: 0,0,0,0
     BoxLayout:
         padding: 20, 20,20,20
         Spinner:
-            size_hint: 0.3, 0.5
-            values: all_months
+            id: month
+            size_hint: 0.5, 1
+            values: all_months[1:]
         Spinner:
+            id: year
+            size_hint: 0.5, 1
             values: ('ok','not okay')
 
 
