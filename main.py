@@ -3,22 +3,26 @@ __version__ = "0.1"
 """
 import kivy
 kivy.require('1.8.0')
+
+import calendar
+import datetime as dt
+import re
+
 from kivy.app import App
 # from kivy.uix.widget import Widget
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
-from kivy.uix.button import Button
+# from kivy.uix.button import Button
 from kivy.uix.textinput import TextInput
-import datetime as dt
-import calendar
 from kivy.clock import Clock
 from kivy.properties import (StringProperty,
-                             NumericProperty,
+                             # NumericProperty,
                              ObjectProperty,
                              ListProperty,)
 from kivy.storage.jsonstore import JsonStore
+from kivy.storage.dictstore import DictStore
 
 
 # calendar.Calendar modified
@@ -55,52 +59,45 @@ class MyCalendar(calendar.Calendar):
 
 # App instance
 class OrganApp(App):
-    def build(self):
-        main = OrganMain()
-        return main
-
-
-class OrganMain(BoxLayout):
-    pass
-
-    # def __init__(self, **kwargs):
-    #     super(OrganMain, self).__init__(**kwargs)
-    #     self.memos = JsonStore('memos.json')
-    #     self.memos.put('test a test with spaces', notes='asdf')
-
-
-# calendar tab of book
-class CalTab(BoxLayout):
 
     # rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
-    date_in_view = ObjectProperty()
+    cal = ObjectProperty(MyCalendar())
+    memos = ObjectProperty(JsonStore('memos.json'))
 
     def __init__(self, **kwargs):
-        super(CalTab, self).__init__(**kwargs)
-        # time updater every 1 sec
-        self.date_picker = GoToDate()
+        super(OrganApp, self).__init__(**kwargs)
         Clock.schedule_interval(self.update_time, 1)
-        # schedule of gui building (better alternative?)
+        # self.memos = JsonStore('memos.json')
 
     # update self.rightnow to a new datetime object every 1sec
     def update_time(self, *args):
         self.rightnow = dt.datetime.now()
 
-    # make month widget with today date
-    def go_today(self, *args):
-        self.ids.calview.go_today()
+    def build(self):
+        main = OrganCalendar()
+        return main
+
+
+# calendar tab of book
+class OrganCalendar(BoxLayout):
+
+    date_in_view = ObjectProperty()
+
+    def __init__(self, **kwargs):
+        super(OrganCalendar, self).__init__(**kwargs)
+        # time updater every 1 sec
+        self.date_picker = GoToDate(self)
 
     def choose_date(self, *args):
         month_name = calendar.month_name[self.date_in_view.month]
-        self.date_picker.ids.month.text = month_name
-        self.date_picker.ids.year.text = str(self.date_in_view.year)
+        self.date_picker.month.text = month_name
+        self.date_picker.year.text = str(self.date_in_view.year)
         self.date_picker.open()
         self.date_picker.y = self.y + self.height / 1.5
 
-    def goto_date(self, *args):
-        month = self.date_picker.ids.month.text
-        year = self.date_picker.ids.year.text
+    def goto_date(self, date=None):
+        self.ids.calview.goto_date(date)
 
     def on_size(self, *args):
         self.date_picker.y = self.y + self.height / 1.5
@@ -108,6 +105,9 @@ class CalTab(BoxLayout):
             self.date_picker.size_hint = (.3, .25)
         elif self.height > self.width:
             self.date_picker.size_hint = (.5, .2)
+
+    def go_year(self, *args):
+        year =
 
 
 class CalView(BoxLayout):
@@ -120,9 +120,8 @@ class CalView(BoxLayout):
         Clock.schedule_once(self.startup)
 
     def startup(self, *args):
-        self.cal = MyCalendar()
         self.make_weekday_headers()
-        self.monthview = MonthView(self.cal)
+        self.monthview = MonthView()
         self.add_widget(self.monthview)
 
     # make the seven week day header labels
@@ -132,8 +131,8 @@ class CalView(BoxLayout):
             dayheader = WeekDayHeader(day)
             self.ids.weekheader.add_widget(dayheader)
 
-    def go_today(self, *args):
-        self.monthview.go_today()
+    def goto_date(self, date=None):
+        self.monthview.goto_date(date)
 
 
 class WeekDayHeader(Label):
@@ -146,29 +145,36 @@ class WeekDayHeader(Label):
 # MonthWidget - called with dateobj and carousel?! :\
 class MonthView(GridLayout):
 
+    # rightnow dateobject for alarms and such
+    rightnow = ObjectProperty(dt.datetime.now())
+    cal = ObjectProperty()
     date = ObjectProperty()
 
-    def __init__(self, cal, **kwargs):
+    def __init__(self, **kwargs):
         super(MonthView, self).__init__(**kwargs)
-        self.cal = cal
         self.daypopup = DayPopup()
         Clock.schedule_once(self.startup)
 
     def startup(self, *args):
         # current view date and today setup
-        self.date = self.today = dt.date.today()
+        self.date = self.rightnow.date()
         for i in range(42):
             self.add_widget(DayWidget())
-        # self.parent.update_header(self.today.strftime("%B %Y"))
         self.change_month()
 
     def on_date(self, instance, date):
         self.parent.date_in_view = date
         self.parent.header = date.strftime("%B %Y")
 
-    def go_today(self):
-        # change current view date to today
-        self.date = self.date.today()
+    def goto_date(self, date=None):
+        if not date:
+            self.date = self.rightnow.date()
+        elif not isinstance(date, dt.date):
+            raise TypeError('need date of type datetime.date, not', type(date))
+        elif self.date != date:
+            self.date = date
+        else:
+            return
         self.change_month()
 
     def change_month(self, offset=0):
@@ -191,16 +197,21 @@ class MonthView(GridLayout):
             if day.month != self.date.month:
                 daywidget.daycolor = (.5, .7, .7, .9)
             # current month days
-            elif day != self.today:
+            elif day != self.rightnow.date():
                 daywidget.daycolor = (.2, .7, .7, .8)
             # today
             else:
                 daywidget.daycolor = (.4, .8, 0, .8)
+                # self.open_daynote(daywidget)
 
     def open_daynote(self, day):
         self.daypopup.set_date(dt.date(self.date.year,
                                self.date.month,
                                int(day.text)))
+        # App rightnow property
+        hour = self.rightnow.hour
+        minute = self.rightnow.minute
+        self.daypopup.ids.hour.text = "{:02}:{:02}".format(hour, minute)
         self.daypopup.open()
 
     # def on_touch_down(self, touch):
@@ -228,23 +239,29 @@ class DayWidget(Label):
             self.parent.open_daynote(self)
             return True
 
+
 class GoToDate(Popup):
-    pass
+
+    month = ObjectProperty()
+    year = ObjectProperty()
+
+    def __init__(self, root, **kwargs):
+        self.root = root
+        super(GoToDate, self).__init__(**kwargs)
+
+    def goto_date(self):
+        month = list(calendar.month_name).index(self.month.text)
+        year = int(self.year.text)
+        self.root.goto_date(dt.date(year, month, 1))
+        self.dismiss()
 
 
 class DayPopup(Popup):
 
-    dateobj = ObjectProperty(None)
-    hour = ObjectProperty(None)
-    minute = ObjectProperty(None)
-    subject = ObjectProperty(None)
-
-    def __init__(self, **kwargs):
-        super(DayPopup, self).__init__(**kwargs)
-        # self.year, self.month, self.day = dtobj.timetuple()[:3]
-        # self.day = date
-        # self.title = date.strftime("%A %d %B")
-        self.memos = JsonStore('memos.json')
+    hour = ObjectProperty()
+    subject = ObjectProperty()
+    notes = ObjectProperty()
+    memos = ObjectProperty()
 
     def set_date(self, date):
         self.date = date
@@ -253,82 +270,136 @@ class DayPopup(Popup):
     def save(self, *args):
         # !!!: fix, make hour/min mandatory?
         try:
-            hour = int(self.hour.text)
-            minute = int(self.minute.text)
+            hour = int(self.hour.text[:2])
+            minute = int(self.hour.text[3:])
         except ValueError:
             hour = 0
             minute = 0
+        date = str(self.date.timetuple()[:3])
+        # hour = (hour, minute)
+        subject_notes = (self.subject.text, self.notes.text)
+        if not self.memos.exists(date):
+            self.memos[date] = {(hour, minute): subject_notes}
+        print(self.memos[date])
+        self.dismiss()
+
+    def on_dismiss(self, *args):
+        # for widget in (self.hour, self.minute, self.subject):
+        # for widget in (self.hour, self.subject):
+        #     widget.text = ''
+        # self.hour.text = ''
+        self.subject.text = ''
+        self.notes.text = ''
+        # print('keys:', self.memos.keys())
+        # for key in self.memos.keys():
+        #     print('key:', key)
+        #     print('value:', self.memos[key])
+        #     print('-'*10)
+        # print("#"*20)
 
 
-class HourMemoInput(TextInput):
+class HourInput(TextInput):
 
-    # minute textinput widget
-    minute = ObjectProperty()
+    subject = ObjectProperty()
 
-    # FIX
-    # don't let user input non valid hours
-    def insert_text(self, substring, from_undo=False):
-        superreturn = super(HourMemoInput, self).insert_text('', from_undo=from_undo)
-        try:
-            int(substring)
-        except ValueError:
-            return superreturn
-        if not self.text and int(substring) > 2:
-            return superreturn
-        elif self.text == '2' and int(substring) > 3:
-            return superreturn
-        elif len(self.text) == 2:
-            return superreturn
+    def __init__(self, **kwargs):
+        super(HourInput, self).__init__(**kwargs)
+        self.reg = re.compile(r'\d\d:\d\d')
+
+    # return True to NOT progate the number
+    def check_key(self, key):
+        if self.cursor_col == 0:
+            if key > 2:
+                self.select_hour()
+                return True
+        elif self.cursor_col == 1:
+            if self.text[0] == '2' and key > 3:
+                return True
+            self.select_minutes()
+        elif self.cursor_col == 3:
+            if key > 5:
+                return True
+        elif self.cursor_col == 4:
+            if key > 9:
+                return True
+        elif self.cursor_col == len(self.text):
+            return True
         else:
-            return super(HourMemoInput, self).insert_text(substring,
-                                                          from_undo=from_undo)
+            return False
 
-    def on_text(self, *args):
-        # change focus to minute textinput
-        if len(self.text) == 2:
-            self.focus = False
-            Clock.schedule_once(self.change_focus)
+    def on_text_validate(self, *args):
+        if not self.reg.match(self.text):
+            colon = self.text.index(':')
+            hour = int(self.text[:colon])
+            minute = int(self.text[colon + 1:])
+            self.text = "{:02}:{:02}".format(hour, minute)
+        self.subject.focus = True
 
-    def change_focus(self, *args):
-        self.minute.focus = True
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            # TODO: FIX! change between hour and minute
+            # if self.cursor_col >= 3:
+            #     self.select_hour()
+            # else:
+            #     self.select_minutes()
+            self.select_hour()
+            return super(HourInput, self).on_touch_down(touch)
 
+    def on_double_tap(self, *args):
+        self.select_hour()
 
-class MinMemoInput(TextInput):
+    def on_triple_tap(self, *args):
+        self.select_hour()
 
-    # hour textinput widget
-    hour = ObjectProperty()
-
-    # don't let user input non valid minutes
-    def insert_text(self, substring, from_undo=False):
-        superreturn = super(MinMemoInput, self).insert_text('', from_undo=from_undo)
+    def keyboard_on_key_down(self, instance, keycode, text, modifiers):
+        key = text
         try:
-            int(substring)
+            key = int(text)
         except ValueError:
-            return superreturn
-        if not self.text and int(substring) > 5:
-            return superreturn
-        elif len(self.text) == 2:
-            return superreturn
+            if keycode[1] == 'backspace':
+                if 1 <= self.cursor_col <= 3:
+                    self.select_hour()
+                elif 4 <= self.cursor_col <= 5:
+                    self.select_minutes()
+                return True
+            elif keycode[1] == 'escape' or keycode[1] == 'enter':
+                pass
+            else:
+                return True
         else:
-            return super(MinMemoInput, self).insert_text(substring,
-                                                         from_undo=from_undo)
+            # True means number is NOT accepted
+            if self.check_key(key):
+                return True
+        return super(HourInput, self).keyboard_on_key_down(instance,
+                                                           keycode,
+                                                           text,
+                                                           modifiers)
 
-    def on_key_down(self, *args):
-        print(args)
+    def select_hour(self, *args):
+        def wrap(*args):
+            self.select_text(0, self.text.index(':'))
+            self.cursor = (0, 0)
+        Clock.schedule_once(wrap)
+
+    def select_minutes(self, *args):
+        def wrap(*args):
+            self.select_text(self.text.index(':') + 1, len(self.text))
+            self.cursor = (3, 0)
+        Clock.schedule_once(wrap)
 
 
 class YearWidget(GridLayout):
-    def __init__(self, dateobj, **kwargs):
-        super(self.__class__,self).__init__(**kwargs)
-        self.mycal = calendar.Calendar()
-        self.dateobj = dateobj
-        self.year = self.dateobj.year
-        self.make_year_grid(self.year)
 
-    def make_year_grid(self, year):
-        for month in range(12):
-            monthwi = MonthWidget(self.dateobj)
-            self.add_widget(monthwi)
+    cal = ObjectProperty()
+
+    def make_year(self, year):
+
+
+
+class YearMonth(Label):
+
+    def __init__(self, **kwargs):
+
 
 
 if __name__ == "__main__":

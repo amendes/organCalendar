@@ -2,10 +2,9 @@
 
 #:import all_months calendar.month_name
 
-<OrganMain>:
-    CalTab:
 
-<CalTab>:
+<OrganCalendar>:
+    cal: app.cal
     id: caltab
     date_in_view: calview.date_in_view
     BoxLayout:
@@ -32,6 +31,9 @@
                 text: calview.header
                 on_release: root.choose_date()
             Button:
+                text: 'GO YEAR'
+                on_release: root.go_year()
+            Button:
                 size_hint: .4, 1
                 background_color: 0,0,0,0
                 font_size: sum(self.parent.size)/30
@@ -39,12 +41,13 @@
                 valign: 'middle'
                 halign: 'right'
                 color: 0,0,0,1
-                text: root.rightnow.strftime('%A %d %B')
-                on_release: root.go_today()
+                text: app.rightnow.strftime('%A %d %B')
+                on_release: root.goto_date()
         CalView:
             id: calview
 
 <CalView>:
+    rightnow: app.rightnow
     orientation: 'vertical'
     BoxLayout:
         size_hint: 1, .1
@@ -60,35 +63,40 @@
         size_hint: 1, .1
 
 <YearWidget>:
+    cal: app.cal
     cols: 4
 
 <GoToDaTe>:
-    padding: 100,200,100,200
+    month: month
+    year: year
+    # padding: 100,200,100,200
     title: 'Choose date'
     title_align: 'center'
     separator_color: 0,0,0,0
     BoxLayout:
+        size_hint: .5, .5
         padding: 20, 20,20,20
         Spinner:
             id: month
-            size_hint: 0.5, 1
+            size_hint: 0.4, 1
             values: all_months[1:]
         Spinner:
             id: year
-            size_hint: 0.5, 1
+            size_hint: 0.4, 1
             values: ('ok','not okay')
+        Button:
+            size_hint: 0.2, 1
+            text: 'GO'
+            on_release: root.goto_date()
+
 
 
 <DayPopup>:
+    memos: app.memos
     hour: hour
-    minute: minute
     subject: subject
-    canvas.before:
-        Rectangle:
-            source: 'data/organ_background.png'
-            pos: self.pos
-            size: self.size
-    size_hint: .7, .7
+    notes: notes
+    size_hint: .8, .8
     BoxLayout:
         spacing: self.height / 20
         padding: 20,20,20,20
@@ -98,27 +106,29 @@
             BoxLayout:
                 orientation: 'vertical'
                 Label:
-                    text: 'Start at:'
-                BoxLayout:
-                    padding: self.width/2.75, 0, 0, 0
-                    HourMemoInput:
-                        minute: minute
-                        id: hour
-                        input_type: 'number'
-                    Label:
-                        size_hint: None, 1
-                        width: self.texture_size[0]
-                        text: ":"
-                    MinMemoInput:
-                        hour: hour
-                        id: minute
-                        input_type: 'number'
+                    id: hourlabel
+                    # canvas.before:
+                    #     Color:
+                    #         rgba: 1,0,0,1
+                    #     Rectangle:
+                    #         pos: self.pos
+                    #         size: self.size
+                    text: 'Start at'
+                HourInput:
+                    pos_hint: {'center_x': .5}
+                    size_hint: None, 1
+                    size: hourlabel.texture_size
+                    subject: subject
+                    id: hour
             BoxLayout:
                 padding: self.width/4, 0, self.width/4, 0
                 orientation: 'vertical'
                 Label:
-                    text: 'Last for:'
+                    text: 'Last for'
                 Spinner:
+                    pos_hint: {'center_x': .5}
+                    size_hint: None, 1
+                    # size_x: self.parent.width / 100
                     values: ('10m', '20m', '30m', '40m', '50m', '60m')
         BoxLayout:
             size_hint: 1, .7
@@ -127,6 +137,7 @@
             BoxLayout:
                 size_hint: 1, .3
                 orientation: 'vertical'
+                padding: self.width/10, 0, self.width/10, 0
                 Label:
                     size_hint: 1, .1
                     bold: True
@@ -152,18 +163,21 @@
             Button:
                 size_hint: None, 1
                 text: 'Save'
+                font_size: sum(self.size)/5
                 width: self.parent.width/5
                 on_release: root.save()
             Button:
                 size_hint: None, 1
                 text: 'Cancel'
-                width: self.parent.width/5
+                font_size: sum(self.size)/5
+                width: self.parent.width/6
                 on_release: root.dismiss()
 
 
-<HourMemoInput,MinMemoInput>:
-    width: self.parent.x/5
-    size_hint: None, 1
+<HourInput>:
+    # input_filter: 'int'
+    # width: 30
+    # size_hint: None, 1
     multiline: False
 
 
@@ -179,6 +193,8 @@
     color: 0,0,0,1
 
 <MonthView>:
+    cal: app.cal
+    rightnow: app.rightnow
     cols: 7
     rows: 6
     spacing: 3
