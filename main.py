@@ -107,7 +107,10 @@ class OrganCalendar(BoxLayout):
             self.date_picker.size_hint = (.5, .2)
 
     def go_year(self, *args):
-        year =
+        self.ids.calview.clear_widgets()
+        year = YearWidget()
+        year.make_year(2015)
+        self.ids.calview.add_widget(year)
 
 
 class CalView(BoxLayout):
@@ -390,16 +393,26 @@ class HourInput(TextInput):
 
 class YearWidget(GridLayout):
 
-    cal = ObjectProperty()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def make_year(self, year):
-
+        for i in range(1, 13):
+            month = YearMonth(2015, i)
+            self.add_widget(month)
 
 
 class YearMonth(Label):
 
-    def __init__(self, **kwargs):
+    def __init__(self, year, month, **kwargs):
+        super().__init__(**kwargs)
+        self.year = year
+        self.month = month
 
+    def make_month(self):
+        for week in calendar.monthcalendar(self.year, self.month):
+            self.text += ' '.join(week)
+            self.text += '\n'
 
 
 if __name__ == "__main__":
