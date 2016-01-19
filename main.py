@@ -1,4 +1,4 @@
-""" Organ Calendar
+"""" Organ Calendar
 __version__ = "0.1"
 """
 import kivy
@@ -6,28 +6,36 @@ kivy.require('1.8.0')
 
 import calendar
 import datetime as dt
+import os
 import re
+import time
 
 from kivy.app import App
+from kivy.clock import Clock
+from kivy.uix.label import Label
+from kivy.uix.popup import Popup
 # from kivy.uix.widget import Widget
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
-from kivy.uix.label import Label
-from kivy.uix.popup import Popup
-# from kivy.uix.button import Button
+from kivy.uix.modalview import ModalView
 from kivy.uix.textinput import TextInput
-from kivy.clock import Clock
 from kivy.properties import (StringProperty,
-                             # NumericProperty,
                              ObjectProperty,
                              ListProperty,)
+from kivy.animation import Animation
+
+print('##*** Currently in:', os.getcwd())
+# Data stuff
+if not os.path.exists('data'):
+    os.mkdir('data')
+
 from kivy.storage.jsonstore import JsonStore
-from kivy.storage.dictstore import DictStore
+MEMODB = JsonStore('data/memodb.json')
+
+from kivy.logger import Logger
 
 
-# calendar.Calendar modified
-class MyCalendar(calendar.Calendar):
-
+class Calendar(calendar.TextCalendar):
     # fix date
     def fix_date(self, year, month):
         if month == 13:
@@ -57,35 +65,58 @@ class MyCalendar(calendar.Calendar):
                 yield day
 
 
-# App instance
-class OrganApp(App):
+Logger.info('Building Custom Calendar.')
+CALENDAR = Calendar()
 
+
+class Date(dt.date):
+    # iterate over year-month-date
+    def __iter__(self):
+        for i in (self.year, self.month, self.day):
+            yield i
+
+    @property
+    def key(self):
+        return int(time.time())
+
+
+# App instance
+class CalendarApp(App):
     # rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
-    cal = ObjectProperty(MyCalendar())
     memos = ObjectProperty(JsonStore('memos.json'))
 
     def __init__(self, **kwargs):
-        super(OrganApp, self).__init__(**kwargs)
+        Logger.info('Building App')
+        super(CalendarApp, self).__init__(**kwargs)
         Clock.schedule_interval(self.update_time, 1)
-        # self.memos = JsonStore('memos.json')
+        self.popup = AlertPopup()
+        self.anim_dismiss_popup = Animation(opacity=0, duration=1.5)
+        self.anim_dismiss_popup.bind(on_complete=self.popup.dismiss)
 
     # update self.rightnow to a new datetime object every 1sec
     def update_time(self, *args):
         self.rightnow = dt.datetime.now()
 
     def build(self):
-        main = OrganCalendar()
+        main = MainView()
         return main
+
+    def alert(self, text):
+        self.popup.label.text = text
+        self.popup.open()
+        self.popup.opacity = 1
+        self.anim_dismiss_popup.start(self.popup)
 
 
 # calendar tab of book
-class OrganCalendar(BoxLayout):
-
+class MainView(BoxLayout):
     date_in_view = ObjectProperty()
+    calview = ObjectProperty()
 
     def __init__(self, **kwargs):
-        super(OrganCalendar, self).__init__(**kwargs)
+        Logger.info('Building Main View')
+        super(MainView, self).__init__(**kwargs)
         # time updater every 1 sec
         self.date_picker = GoToDate(self)
 
@@ -97,7 +128,8 @@ class OrganCalendar(BoxLayout):
         self.date_picker.y = self.y + self.height / 1.5
 
     def goto_date(self, date=None):
-        self.ids.calview.goto_date(date)
+        Logger.warning('CHANGE THAT PLZ')
+        self.calview.goto_date(date)
 
     def on_size(self, *args):
         self.date_picker.y = self.y + self.height / 1.5
@@ -107,15 +139,14 @@ class OrganCalendar(BoxLayout):
             self.date_picker.size_hint = (.5, .2)
 
     def go_year(self, *args):
-        self.ids.calview.clear_widgets()
+        self.calview.clear_widgets()
         year = YearWidget()
         year.make_year(2015)
-        self.ids.calview.add_widget(year)
+        self.calview.add_widget(year)
 
 
 class CalView(BoxLayout):
-
-    date_in_view = ObjectProperty(allownone=True)
+    date_in_view = ObjectProperty()
     header = StringProperty()
 
     def __init__(self, **kwargs):
@@ -139,7 +170,6 @@ class CalView(BoxLayout):
 
 
 class WeekDayHeader(Label):
-
     def __init__(self, day, **kwargs):
         super(WeekDayHeader, self).__init__(**kwargs)
         self.text = str(day)
@@ -147,11 +177,10 @@ class WeekDayHeader(Label):
 
 # MonthWidget - called with dateobj and carousel?! :\
 class MonthView(GridLayout):
-
-    # rightnow dateobject for alarms and such
+    # App rightnow property rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
-    cal = ObjectProperty()
     date = ObjectProperty()
+    memos = ObjectProperty()
 
     def __init__(self, **kwargs):
         super(MonthView, self).__init__(**kwargs)
@@ -162,12 +191,8 @@ class MonthView(GridLayout):
         # current view date and today setup
         self.date = self.rightnow.date()
         for i in range(42):
-            self.add_widget(DayWidget())
+            self.add_widget(DayWidget(month=self))
         self.change_month()
-
-    def on_date(self, instance, date):
-        self.parent.date_in_view = date
-        self.parent.header = date.strftime("%B %Y")
 
     def goto_date(self, date=None):
         if not date:
@@ -183,8 +208,10 @@ class MonthView(GridLayout):
     def change_month(self, offset=0):
         # set current view date if offset
         if offset:
-            self.date = self.cal.fix_date(self.date.year,
+            self.date = CALENDAR.fix_date(self.date.year,
                                           self.date.month + offset)
+        self.parent.date_in_view = self.date
+        self.parent.header = self.date.strftime("%B %Y")
         self.change_days()
 
     # set day text and label color
@@ -193,8 +220,10 @@ class MonthView(GridLayout):
         # 'current': (.2, .7, .7, .8),
         # 'other':   (.5, .7, .7, .9),
         # 'today':   (.4, .8, 0, .8)}
-        days = self.cal.month_days(self.date.year, self.date.month)
+        Clock.unschedule(self.mark_days)
+        days = CALENDAR.month_days(self.date.year, self.date.month)
         for day, daywidget in zip(days, reversed(self.children)):
+            daywidget.datetup = day.timetuple()[:3]
             daywidget.text = str(day.day)
             # other days
             if day.month != self.date.month:
@@ -205,20 +234,25 @@ class MonthView(GridLayout):
             # today
             else:
                 daywidget.daycolor = (.4, .8, 0, .8)
-                # self.open_daynote(daywidget)
+            # recolor marked days to black
+            daywidget.color = (0, 0, 0, 1)
+        Clock.schedule_once(self.mark_days, 1)
 
     def open_daynote(self, day):
-        self.daypopup.set_date(dt.date(self.date.year,
+        self.daypopup.set_date(Date(self.date.year,
                                self.date.month,
                                int(day.text)))
-        # App rightnow property
-        hour = self.rightnow.hour
-        minute = self.rightnow.minute
-        self.daypopup.ids.hour.text = "{:02}:{:02}".format(hour, minute)
+        hour, minute = self.rightnow.timetuple()[3:5]
+        self.daypopup.ids.time.text = "{:02}:{:02}".format(hour, minute)
         self.daypopup.open()
 
-    # def on_touch_down(self, touch):
-    #     self.touched = True if self.collide_point(*touch.pos) else False
+    def mark_days(self, day):
+        memos = MEMODB.find(year=self.date.year,
+                              month=self.date.month)
+        days_with_memo = [(d['year'], d['month'], d['day']) for k, d in memos]
+        for day in self.children:
+            if day.datetup in days_with_memo:
+                day.color = (1, 0, 0, 1)
 
     def on_touch_up(self, touch):
         if self.collide_point(*touch.opos):
@@ -234,17 +268,19 @@ class MonthView(GridLayout):
 
 # DayWidget - current called with day -
 class DayWidget(Label):
-
     daycolor = ListProperty([1, 1, 1, 1])
+
+    def __init__(self, **kwargs):
+        self.month = kwargs['month']
+        super(DayWidget, self).__init__()
 
     def on_touch_up(self, touch):
         if self.collide_point(*touch.pos) and self.collide_point(*touch.opos):
-            self.parent.open_daynote(self)
+            self.month.open_daynote(self)
             return True
 
 
 class GoToDate(Popup):
-
     month = ObjectProperty()
     year = ObjectProperty()
 
@@ -260,11 +296,14 @@ class GoToDate(Popup):
 
 
 class DayPopup(Popup):
-
-    hour = ObjectProperty()
+    # App
+    app = ObjectProperty()
+    # HourInput
+    time = ObjectProperty()
+    # Label
     subject = ObjectProperty()
+    # Label
     notes = ObjectProperty()
-    memos = ObjectProperty()
 
     def set_date(self, date):
         self.date = date
@@ -272,37 +311,35 @@ class DayPopup(Popup):
 
     def save(self, *args):
         # !!!: fix, make hour/min mandatory?
-        try:
-            hour = int(self.hour.text[:2])
-            minute = int(self.hour.text[3:])
-        except ValueError:
-            hour = 0
-            minute = 0
-        date = str(self.date.timetuple()[:3])
-        # hour = (hour, minute)
-        subject_notes = (self.subject.text, self.notes.text)
-        if not self.memos.exists(date):
-            self.memos[date] = {(hour, minute): subject_notes}
-        print(self.memos[date])
+        if not self.subject.text:
+            self.app.alert('No subject')
+            self.dismiss()
+            return
+        year, month, day = self.date.timetuple()[:3]
+        hour, minute = self.time.get()
+        MEMODB[self.date.key] = {'year': year,
+                                   'month': month,
+                                   'day': day,
+                                   'hour': hour,
+                                   'minute': minute,
+                                   'subject': self.subject.text,
+                                   'notes': self.notes.text}
+
         self.dismiss()
 
     def on_dismiss(self, *args):
-        # for widget in (self.hour, self.minute, self.subject):
-        # for widget in (self.hour, self.subject):
-        #     widget.text = ''
-        # self.hour.text = ''
         self.subject.text = ''
         self.notes.text = ''
-        # print('keys:', self.memos.keys())
-        # for key in self.memos.keys():
-        #     print('key:', key)
-        #     print('value:', self.memos[key])
-        #     print('-'*10)
-        # print("#"*20)
+
+
+class NoteInputView(BoxLayout):
+    pass
+
+class NoteInput(TextInput):
+    pass
 
 
 class HourInput(TextInput):
-
     subject = ObjectProperty()
 
     def __init__(self, **kwargs):
@@ -390,30 +427,43 @@ class HourInput(TextInput):
             self.cursor = (3, 0)
         Clock.schedule_once(wrap)
 
+    def get(self):
+        return (self.text[:2], self.text[3:5])
 
-class YearWidget(GridLayout):
 
+# class YearWidget(GridLayout):
+class YearWidget(Label):
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super(YearWidgt, self).__init__(**kwargs)
 
     def make_year(self, year):
-        for i in range(1, 13):
-            month = YearMonth(2015, i)
-            self.add_widget(month)
+        self.text = CALENDAR.formatyear(2016)
+    #     for i in range(1, 13):
+    #         month = YearMonth(2016, i)
+    #         self.add_widget(month)
 
 
-class YearMonth(Label):
+# class YearMonth(Label):
+#     def __init__(self, year, month, **kwargs):
+#         super().__init__(**kwargs)
+#         self.year = year
+#         self.month = month
+#         Clock.schedule_once(self.make_month)
 
-    def __init__(self, year, month, **kwargs):
-        super().__init__(**kwargs)
-        self.year = year
-        self.month = month
+#     def make_month(self,*args, **kwargs):
+#         self.text = CALENDAR.formatmonth(self.year, self.month)
 
-    def make_month(self):
-        for week in calendar.monthcalendar(self.year, self.month):
-            self.text += ' '.join(week)
-            self.text += '\n'
+
+class AlertPopup(ModalView):
+    def __init__(self, **kwargs):
+        super(AlertPopup, self).__init__(**kwargs)
+        self.opacity = 0
+        self.size_hint = (.2, .15)
+        self.label = Label(pos=self.pos,
+                           size=(100, 100),
+                           text='ALERT')
+        self.add_widget(self.label)
 
 
 if __name__ == "__main__":
-    OrganApp().run()
+    CalendarApp().run()

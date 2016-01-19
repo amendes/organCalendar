@@ -2,11 +2,9 @@
 
 #:import all_months calendar.month_name
 
-
-<OrganCalendar>:
-    cal: app.cal
-    id: caltab
+<MainView>:
     date_in_view: calview.date_in_view
+    calview: calview
     BoxLayout:
         canvas:
             Color:
@@ -30,9 +28,9 @@
                 valign: 'middle'
                 text: calview.header
                 on_release: root.choose_date()
-            Button:
-                text: 'GO YEAR'
-                on_release: root.go_year()
+            # Button:
+            #     text: 'GO YEAR'
+            #     on_release: root.go_year()
             Button:
                 size_hint: .4, 1
                 background_color: 0,0,0,0
@@ -63,7 +61,6 @@
         size_hint: 1, .1
 
 <YearWidget>:
-    cal: app.cal
     cols: 4
 
 <GoToDaTe>:
@@ -74,7 +71,7 @@
     title_align: 'center'
     separator_color: 0,0,0,0
     BoxLayout:
-        size_hint: .5, .5
+        size_hint: 1,1 # .5, .5
         padding: 20, 20,20,20
         Spinner:
             id: month
@@ -82,18 +79,18 @@
             values: all_months[1:]
         Spinner:
             id: year
-            size_hint: 0.4, 1
+            size_hint: 0.4, 1 
             values: ('ok','not okay')
         Button:
-            size_hint: 0.2, 1
+            size_hint: 0.1, 1
             text: 'GO'
             on_release: root.goto_date()
 
 
 
 <DayPopup>:
-    memos: app.memos
-    hour: hour
+    app: app
+    time: time
     subject: subject
     notes: notes
     size_hint: .8, .8
@@ -119,7 +116,7 @@
                     size_hint: None, 1
                     size: hourlabel.texture_size
                     subject: subject
-                    id: hour
+                    id: time
             BoxLayout:
                 padding: self.width/4, 0, self.width/4, 0
                 orientation: 'vertical'
@@ -153,9 +150,9 @@
                     size_hint: 1, .1
                     bold: True
                     text: "Notes:"
-                TextInput:
-                    id: notes
-                    sizehint: 1, .9
+                # TextInput:
+                #     id: notes
+                #     sizehint: 1, .9
         BoxLayout:
             size_hint: 1, .1
             spacing: self.width/100
@@ -181,6 +178,12 @@
     multiline: False
 
 
+<NoteInput>:
+
+
+<NoteInputView>:
+
+
 <WeekDayHeader>:
     canvas.before:
         Color:
@@ -193,7 +196,6 @@
     color: 0,0,0,1
 
 <MonthView>:
-    cal: app.cal
     rightnow: app.rightnow
     cols: 7
     rows: 6
@@ -223,5 +225,10 @@
     #     pos: self.parent.x - 10, self.parent.y - 10
 
 <YearWidget>:
-    cols: 3
-    row: 4
+    # cols: 3
+    # row: 4
+
+<YearMonth>:
+    text_size: self.size
+    valign: 'middle'
+    halign: 'left'
