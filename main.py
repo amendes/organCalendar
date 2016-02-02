@@ -15,6 +15,7 @@ from kivy.clock import Clock
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
 # from kivy.uix.widget import Widget
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.modalview import ModalView
@@ -23,21 +24,29 @@ from kivy.properties import (StringProperty,
                              ObjectProperty,
                              ListProperty,)
 from kivy.animation import Animation
+from kivy.uix.listview import ListView
+from kivy.adapters import simplelistadapter
 
 print('##*** Currently in:', os.getcwd())
 # Data stuff
 if not os.path.exists('data'):
     os.mkdir('data')
 
+# DATABASE
 from kivy.storage.jsonstore import JsonStore
 MEMODB = JsonStore('data/memodb.json')
+# Get a unique key for the database
+def GET_UNIQUE_KEY():
+        return int(time.time())
 
 from kivy.logger import Logger
 
 
+# Custom Calendar
 class Calendar(calendar.TextCalendar):
     # fix date
-    def fix_date(self, year, month):
+    @staticmethod
+    def fix_date(year, month):
         if month == 13:
             month = 1
             year += 1
@@ -69,18 +78,6 @@ Logger.info('Building Custom Calendar.')
 CALENDAR = Calendar()
 
 
-class Date(dt.date):
-    # iterate over year-month-date
-    def __iter__(self):
-        for i in (self.year, self.month, self.day):
-            yield i
-
-    @property
-    def key(self):
-        return int(time.time())
-
-
-# App instance
 class CalendarApp(App):
     # rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
@@ -89,7 +86,7 @@ class CalendarApp(App):
     def __init__(self, **kwargs):
         Logger.info('Building App')
         super(CalendarApp, self).__init__(**kwargs)
-        Clock.schedule_interval(self.update_time, 1)
+        # Clock.schedule_interval(self.update_time, 1)
         self.popup = AlertPopup()
         self.anim_dismiss_popup = Animation(opacity=0, duration=1.5)
         self.anim_dismiss_popup.bind(on_complete=self.popup.dismiss)
@@ -109,54 +106,49 @@ class CalendarApp(App):
         self.anim_dismiss_popup.start(self.popup)
 
 
-# calendar tab of book
 class MainView(BoxLayout):
-    date_in_view = ObjectProperty()
-    calview = ObjectProperty()
-
     def __init__(self, **kwargs):
-        Logger.info('Building Main View')
         super(MainView, self).__init__(**kwargs)
-        # time updater every 1 sec
-        self.date_picker = GoToDate(self)
+        Logger.info('Building Main View')
+        self.monthview = None
+        self.yearview = None
+        # Clock.schedule_once(self.go_monthview, 1)
+        self.go_monthview()
 
-    def choose_date(self, *args):
-        month_name = calendar.month_name[self.date_in_view.month]
-        self.date_picker.month.text = month_name
-        self.date_picker.year.text = str(self.date_in_view.year)
-        self.date_picker.open()
-        self.date_picker.y = self.y + self.height / 1.5
+    def go_monthview(self, *args, **kwargs):
+        if not self.monthview:
+            self.monthview = MonthView()
+        self.clear_widgets()
+        self.add_widget(self.monthview)
 
-    def goto_date(self, date=None):
-        Logger.warning('CHANGE THAT PLZ')
-        self.calview.goto_date(date)
-
-    def on_size(self, *args):
-        self.date_picker.y = self.y + self.height / 1.5
-        if self.width > self.height:
-            self.date_picker.size_hint = (.3, .25)
-        elif self.height > self.width:
-            self.date_picker.size_hint = (.5, .2)
-
-    def go_year(self, *args):
-        self.calview.clear_widgets()
-        year = YearWidget()
-        year.make_year(2015)
-        self.calview.add_widget(year)
+    def go_yearview(self, *args):
+        if not self.yearview:
+            self.yearview = YearWidget()
+        self.clear_widgets()
+        self.yearview.make_year(2015)
+        self.add_widget(self.yearview)
 
 
-class CalView(BoxLayout):
-    date_in_view = ObjectProperty()
+class MonthView(BoxLayout):
     header = StringProperty()
 
     def __init__(self, **kwargs):
-        super(CalView, self).__init__(**kwargs)
-        Clock.schedule_once(self.startup)
+        super(MonthView, self).__init__(**kwargs)
+        # Clock.schedule_once(self.startup)
+        self.date_picker = DatePicker(self)
+        self.startup()
 
     def startup(self, *args):
         self.make_weekday_headers()
-        self.monthview = MonthView()
-        self.add_widget(self.monthview)
+        self.monthdaysview = MonthDaysView(self)
+        self.add_widget(self.monthdaysview)
+
+    # def on_size(self, *args):
+    #     self.date_picker.y = self.y + self.height / 1.5
+    #     if self.width > self.height:
+    #         self.date_picker.size_hint = (.3, .25)
+    #     elif self.height > self.width:
+    #         self.date_picker.size_hint = (.5, .2)
 
     # make the seven week day header labels
     def make_weekday_headers(self, *args):
@@ -165,8 +157,15 @@ class CalView(BoxLayout):
             dayheader = WeekDayHeader(day)
             self.ids.weekheader.add_widget(dayheader)
 
+    def choose_date(self, *args):
+        month_name = calendar.month_name[self.monthdaysview.date.month]
+        self.date_picker.month.text = month_name
+        self.date_picker.year.text = str(self.monthdaysview.date.year)
+        self.date_picker.open()
+        self.date_picker.y = self.y + self.height / 1.5
+
     def goto_date(self, date=None):
-        self.monthview.goto_date(date)
+        self.monthdaysview.goto_date(date)
 
 
 class WeekDayHeader(Label):
@@ -175,23 +174,27 @@ class WeekDayHeader(Label):
         self.text = str(day)
 
 
-# MonthWidget - called with dateobj and carousel?! :\
-class MonthView(GridLayout):
+class MonthDaysView(GridLayout):
     # App rightnow property rightnow dateobject for alarms and such
     rightnow = ObjectProperty(dt.datetime.now())
     date = ObjectProperty()
     memos = ObjectProperty()
 
-    def __init__(self, **kwargs):
-        super(MonthView, self).__init__(**kwargs)
+    def __init__(self, monthview, **kwargs):
+        super(MonthDaysView, self).__init__(**kwargs)
+        # current date in view
+        self.date = None
+        # parent
+        self.monthview = monthview
         self.daypopup = DayPopup()
-        Clock.schedule_once(self.startup)
+        # Clock.schedule_once(self.startup)
+        self.startup()
 
     def startup(self, *args):
         # current view date and today setup
         self.date = self.rightnow.date()
         for i in range(42):
-            self.add_widget(DayWidget(month=self))
+            self.add_widget(MonthDay(monthview=self))
         self.change_month()
 
     def goto_date(self, date=None):
@@ -208,51 +211,47 @@ class MonthView(GridLayout):
     def change_month(self, offset=0):
         # set current view date if offset
         if offset:
-            self.date = CALENDAR.fix_date(self.date.year,
-                                          self.date.month + offset)
-        self.parent.date_in_view = self.date
-        self.parent.header = self.date.strftime("%B %Y")
+            self.date = CALENDAR.fix_date(self.date.year, self.date.month + offset)
+        self.monthview.header = self.date.strftime("%B %Y")
         self.change_days()
 
-    # set day text and label color
     def change_days(self):
         # Colors:
         # 'current': (.2, .7, .7, .8),
         # 'other':   (.5, .7, .7, .9),
         # 'today':   (.4, .8, 0, .8)}
         Clock.unschedule(self.mark_days)
-        days = CALENDAR.month_days(self.date.year, self.date.month)
-        for day, daywidget in zip(days, reversed(self.children)):
-            daywidget.datetup = day.timetuple()[:3]
-            daywidget.text = str(day.day)
+        dates = CALENDAR.month_days(self.date.year, self.date.month)
+        for date, monthday in zip(dates, reversed(self.children)):
+            # optimization?: don't use date object
+            monthday.date = date.timetuple()[:3]
+            # TODO: move to kv
+            monthday.text = str(date.day)
             # other days
-            if day.month != self.date.month:
-                daywidget.daycolor = (.5, .7, .7, .9)
-            # current month days
-            elif day != self.rightnow.date():
-                daywidget.daycolor = (.2, .7, .7, .8)
-            # today
+            if date.month != self.date.month:
+                monthday.daycolor = (.5, .7, .7, .9)
+            # current month dates
+            elif date != self.rightnow.date():
+                monthday.daycolor = (.2, .7, .7, .8)
+            # todate
             else:
-                daywidget.daycolor = (.4, .8, 0, .8)
-            # recolor marked days to black
-            daywidget.color = (0, 0, 0, 1)
-        Clock.schedule_once(self.mark_days, 1)
+                monthday.daycolor = (.4, .8, 0, .8)
+            # recolor marked dates to black
+            monthday.color = (0, 0, 0, 1)
+        Clock.schedule_once(self.mark_days, .5)
 
-    def open_daynote(self, day):
-        self.daypopup.set_date(Date(self.date.year,
-                               self.date.month,
-                               int(day.text)))
-        hour, minute = self.rightnow.timetuple()[3:5]
-        self.daypopup.ids.time.text = "{:02}:{:02}".format(hour, minute)
-        self.daypopup.open()
+    # def open_daynote(self, day):
+    #     self.daypopup.open(day=day.date)
 
     def mark_days(self, day):
-        memos = MEMODB.find(year=self.date.year,
-                              month=self.date.month)
+        memos = MEMODB.find(year=self.date.year, month=self.date.month)
         days_with_memo = [(d['year'], d['month'], d['day']) for k, d in memos]
-        for day in self.children:
-            if day.datetup in days_with_memo:
-                day.color = (1, 0, 0, 1)
+        for monthday in self.children:
+            if monthday.date in days_with_memo:
+                monthday.color = (1, 0, 0, 1)
+                monthday.has_notes = True
+            else:
+                monthday.has_notes = False
 
     def on_touch_up(self, touch):
         if self.collide_point(*touch.opos):
@@ -263,79 +262,155 @@ class MonthView(GridLayout):
             elif xdiff < -self.width/10:
                 self.change_month(-1)
                 return True
-        return super(MonthView, self).on_touch_up(touch)
+        return super(MonthDaysView, self).on_touch_up(touch)
 
 
-# DayWidget - current called with day -
-class DayWidget(Label):
+class MonthDay(Label):
     daycolor = ListProperty([1, 1, 1, 1])
 
     def __init__(self, **kwargs):
-        self.month = kwargs['month']
-        super(DayWidget, self).__init__()
+        self.monthview = kwargs['monthview']
+        self.has_notes = False
+        super(MonthDay, self).__init__()
 
     def on_touch_up(self, touch):
         if self.collide_point(*touch.pos) and self.collide_point(*touch.opos):
-            self.month.open_daynote(self)
+            self.monthview.daypopup.open(self)
             return True
 
+    @property
+    def date(self):
+        return (self.year, self.month, self.day)
 
-class GoToDate(Popup):
+    @date.setter
+    def date(self, datetup):
+        self.year, self.month, self.day  = datetup
+
+
+class DatePicker(Popup):
     month = ObjectProperty()
     year = ObjectProperty()
 
     def __init__(self, root, **kwargs):
         self.root = root
-        super(GoToDate, self).__init__(**kwargs)
+        super(DatePicker, self).__init__(**kwargs)
 
-    def goto_date(self):
+    def on_dismiss(self):
         month = list(calendar.month_name).index(self.month.text)
         year = int(self.year.text)
         self.root.goto_date(dt.date(year, month, 1))
-        self.dismiss()
 
 
 class DayPopup(Popup):
+    def __init__(self, **kwargs):
+        super(DayPopup, self).__init__(**kwargs)
+        self.container = AnchorLayout()
+        self.add_widget(self.container)
+        self.daynote = DayNote(self)
+        self.dayoptions = None
+        self.daynotelist = None
+
+    def open(self, day, *args, **kwargs):
+        self.title = dt.date(*day.date).strftime("%A %d %B %Y")
+        self.day = day
+        if day.has_notes:
+            self.open_dayoptions()
+        else:
+            self.open_daynote()
+        super(DayPopup, self).open(self, *args, **kwargs)
+
+    def open_dayoptions(self):
+        if not self.dayoptions:
+            self.dayoptions = DayOptions(self)
+        self.container.clear_widgets()
+        self.size_hint = (.3, .2)
+        self.container.add_widget(self.dayoptions)
+
+    def open_daynote(self):
+        self.container.clear_widgets()
+        self.size_hint = (.5, .5)
+        hour, minute = dt.datetime.now().timetuple()[3:5]
+        self.daynote.time.text = "{:02}:{:02}".format(hour, minute)
+        self.container.add_widget(self.daynote)
+
+    def open_daynotelist(self):
+        if not self.daynotelist:
+            self.daynotelist = DayNoteList()
+        self.container.clear_widgets()
+        self.size_hint = (.3, .6)
+        year, month, day = self.day.date
+        notes = MEMODB.find(year=year, month=month, day=day)
+        self.container.add_widget(self.daynotelist)
+        for k, note in notes:
+            time = note['hour'], note['minute']
+            subject = note['subject']
+            entry = DayNoteListEntry((time, subject))
+            self.daynotelist.add_widget(entry)
+
+    def on_dismiss(self, *args, **kwargs):
+        self.day = None
+        if self.daynote.subject:
+            self.daynote.subject.text = ''
+        # self.notes.text = ''
+
+
+class DayOptions(BoxLayout):
+    def __init__(self, popup, **kwargs):
+        super(DayOptions, self).__init__(**kwargs)
+        self.popup = popup
+
+
+class DayNoteList(BoxLayout):
+    pass
+
+
+class DayNoteListEntry(BoxLayout):
+    info = ListProperty()
+    def __init__(self, info, **kwargs):
+        self.info = info
+        super(DayNoteListEntry, self).__init__(**kwargs)
+
+class DayNote(BoxLayout):
     # App
     app = ObjectProperty()
     # HourInput
     time = ObjectProperty()
     # Label
     subject = ObjectProperty()
-    # Label
-    notes = ObjectProperty()
 
-    def set_date(self, date):
-        self.date = date
-        self.title = date.strftime("%A %d %B %Y")
+    def __init__(self, popup, **kwargs):
+        super(DayNote, self).__init__(**kwargs)
+        self.popup = popup
+        self.notesinput = NotesInputView(self)
 
     def save(self, *args):
         # !!!: fix, make hour/min mandatory?
         if not self.subject.text:
+            self.popup.dismiss()
             self.app.alert('No subject')
-            self.dismiss()
             return
-        year, month, day = self.date.timetuple()[:3]
+        year, month, day = self.popup.day.date
         hour, minute = self.time.get()
-        MEMODB[self.date.key] = {'year': year,
-                                   'month': month,
-                                   'day': day,
-                                   'hour': hour,
-                                   'minute': minute,
-                                   'subject': self.subject.text,
-                                   'notes': self.notes.text}
+        MEMODB[GET_UNIQUE_KEY()] = {'year': year,
+                                    'month': month,
+                                    'day': day,
+                                    'hour': hour,
+                                    'minute': minute,
+                                    'subject': self.subject.text,
+                                    'notes': self.notesinput.text}
 
-        self.dismiss()
-
-    def on_dismiss(self, *args):
-        self.subject.text = ''
-        self.notes.text = ''
+        self.popup.dismiss()
 
 
-class NoteInputView(BoxLayout):
-    pass
+class NotesInputView(AnchorLayout):
+    text = ObjectProperty()
 
-class NoteInput(TextInput):
+    def __init__(self, daynote, **kwargs):
+        super(NotesInputView, self).__init__(**kwargs)
+        self.daynote = daynote
+
+
+class NotesInput(TextInput):
     pass
 
 
@@ -377,11 +452,6 @@ class HourInput(TextInput):
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
-            # TODO: FIX! change between hour and minute
-            # if self.cursor_col >= 3:
-            #     self.select_hour()
-            # else:
-            #     self.select_minutes()
             self.select_hour()
             return super(HourInput, self).on_touch_down(touch)
 
@@ -434,7 +504,7 @@ class HourInput(TextInput):
 # class YearWidget(GridLayout):
 class YearWidget(Label):
     def __init__(self, **kwargs):
-        super(YearWidgt, self).__init__(**kwargs)
+        super(YearWidget, self).__init__(**kwargs)
 
     def make_year(self, year):
         self.text = CALENDAR.formatyear(2016)
