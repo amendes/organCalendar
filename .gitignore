@@ -1,0 +1,5 @@
+bin
+.buildozer
+buildozer.spec
+data
+log
