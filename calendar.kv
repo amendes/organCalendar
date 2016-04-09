@@ -1,4 +1,4 @@
-#:kivy 1.8.0 
+#:kivy 1.8.0
 
 #:import all_months calendar.month_name
 
@@ -57,8 +57,8 @@
 
 <DatePicker>:
     size_hint: .4 , .3
-    month: month
-    year: year
+    month_spinner: month
+    year_spinner: year
     # center: self.parent.center
     # padding: 100,200,100,200
     title: 'Choose date'
@@ -103,10 +103,10 @@
         text: root.info[1]
     Button:
         size_hint: .5, 1
-        text: 'I'
+        text: ' I '
     Button:
         size_hint: .5, 1
-        text: 'X'
+        text: ' X '
 
 <ContentOptions>:
     padding: self.width / 8, self.height / 6

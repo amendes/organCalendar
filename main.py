@@ -10,6 +10,7 @@ import os
 import re
 import time
 from itertools import dropwhile
+from contextlib import contextmanager
 
 from kivy.app import App
 from kivy.clock import Clock
@@ -45,7 +46,7 @@ from kivy.logger import Logger
 class Calendar(calendar.TextCalendar):
     def __init__(self, *args, **kwargs):
         self.one_day = dt.timedelta(days=1)
-        super().__init__(*args, **kwargs)
+        super(Calendar, self).__init__(*args, **kwargs)
 
     # fix date
     @staticmethod
@@ -105,14 +106,18 @@ class CalendarApp(App):
     def alert(self, text):
         self.popup.label.text = text
         self.popup.open()
-        elf.popup.opacity = 1
+        self.popup.opacity = 1
         self.anim_dismiss_popup.start(self.popup)
+
+    def on_pause(self, *args):
+        return True
 
 
 class Main(BoxLayout):
     def __init__(self, **kwargs):
         super(Main, self).__init__(**kwargs)
         Logger.info('Building Main View')
+        self.popup = DayPopup()
         # Clock.schedule_once(self.go_month, 1)
         self.month = None
         self.year = None
@@ -120,7 +125,7 @@ class Main(BoxLayout):
 
     def show_month(self, *args, **kwargs):
         if not self.month:
-            self.month= Month(self)
+            self.month = Month(self)
         self.clear_widgets()
         self.add_widget(self.month)
 
@@ -139,19 +144,23 @@ class Month(BoxLayout):
     def __init__(self, main, **kwargs):
         super(Month, self).__init__(**kwargs)
         self.main = main
+        self.popup = main.popup
         # Clock.schedule_once(self.startup)
         self.date_picker = DatePicker(self)
         self.startup()
 
     def startup(self, *args):
         self.make_weekday_headers()
-        self._popup = DayPopup(self)
         self.view = MonthView(self)
         self.add_widget(self.view)
 
     @property
     def date(self):
         return self.view.date
+
+    @date.setter
+    def date(self, value):
+        self.view.date = value
 
     # def on_size(self, *args):
     #     self.date_picker.y = self.y + self.height / 1.5
@@ -170,21 +179,16 @@ class Month(BoxLayout):
 
     def choose_date(self, *args):
         month_name = calendar.month_name[self.view.date.month]
-        self.date_picker.month.text = month_name
-        self.date_picker.year.text = str(self.view.date.year)
+        self.date_picker.month_spinner.text = month_name
+        self.date_picker.year_spinner.text = str(self.view.date.year)
         self.date_picker.open()
         self.date_picker.y = self.y + self.height / 1.5
 
     def go_today(self, date=None):
         self.view.date = dt.date.today()
 
-    @property
-    def popup(self):
-        return self._popup
-
     def save_entry(self, day):
         pass
-
 
 
 class WeekDayHeader(Label):
@@ -203,6 +207,7 @@ class MonthView(GridLayout):
         super(MonthView, self).__init__(**kwargs)
         self.date = None
         self.month = month
+        self._popup = month.popup
         # Clock.schedule_once(self.startup)
         self.startup()
 
@@ -248,34 +253,31 @@ class MonthView(GridLayout):
                 return True
         return super(MonthView, self).on_touch_up(touch)
 
+    def popup(self, day):
+        pop = self._popup
+        pop.day = day
+        if day.has_notes:
+            pop.show('options')
+        else:
+            pop.show('entry')
+        pop.open()
+
+
 # day controller
 class Day(Label):
     daycolor = ListProperty([1, 1, 1, 1])
     has_notes = BooleanProperty(False)
     date = ObjectProperty()
 
-    def __init__(self, view=None, **kwargs):
-        if view is not None:
-            self.view = view
+    def __init__(self, view, **kwargs):
+        self.view = view
         super(Day, self).__init__(**kwargs)
 
     def on_touch_up(self, touch):
         if self.collide_point(*touch.pos) and self.collide_point(*touch.opos):
-            if self.has_notes:
-                self.popup.show('options')
-            else:
-                self.popup.show('entry')
+            self.view.popup(self)
             return True
         return False
-
-    def get_popup_view(self, name):
-        if name == 'entry':
-            view = ContentEntry(self)
-        elif name == 'options':
-            view = ContentOptions(self)
-        elif name == 'list':
-            view = ContentList(self)
-        return view
 
     def on_has_notes(self, *args):
         if self.has_notes:
@@ -301,74 +303,79 @@ class Day(Label):
         else:
             self.has_notes = False
 
-    # @property
-    # def date(self):
-    #     return (self.year, self.month, self.day)
-
-    # @date.setter
-    # def date(self, datetup):
-    #     self.year, self.month, self.day  = datetup
-
 
 class DatePicker(Popup):
-    month = ObjectProperty()
-    year = ObjectProperty()
+    month_spinner = ObjectProperty()
+    year_spinner = ObjectProperty()
 
-    def __init__(self, root, **kwargs):
-        self.root = root
+    def __init__(self, month, **kwargs):
+        self.month = month
         super(DatePicker, self).__init__(**kwargs)
 
     def on_dismiss(self):
-        month = list(calendar.month_name).index(self.month.text)
-        year = int(self.year.text)
-        self.root.goto_date(dt.date(year, month, 1))
+        month = list(calendar.month_name).index(self.month_spinner.text)
+        year = int(self.year_spinner.text)
+        self.month.date = dt.date(year, month, 1)
+
 
 ###### POPUP ######
 class DayPopup(Popup):
-    def __init__(self, context, **kwargs):
+    def __init__(self, **kwargs):
         super(DayPopup, self).__init__(**kwargs)
-        self.context = context
         self.views = {}
+        self.day = None
 
-    def on_content(self, *args):
-        super().on_content(*args)
-        if self.content is None:
-            self.dismiss()
-        else:
-            self.open()
+    def show(self, content_name):
+        content = self.views.get(content_name)
+        if content is None:
+            content = self.get_content(content_name)
+            self.views[content_name] = content
+        content.prepare(self.day)
+        self.content = content
 
-    def show(self, view):
-        view = self.views[view]
-        if view is None:
-            view = self.context.get_view(view)
-        with view.open(self.context):
-            self.content = view
+    def get_content(self, name):
+        if name == 'entry':
+            view = ContentEntry(self)
+        elif name == 'options':
+            view = ContentOptions(self)
+        elif name == 'list':
+            view = ContentList(self)
+        return view
 
+# class PopupContent:
+#     def __init__(self, popup):
+#         self.popup = popup
+#         super(PopupContent, self).__init__()
 
-    # def on_dismiss(self, *args, **kwargs):
-    #     self.day = None
-    #     if self.daynote.subject:
-    #     # self.notes.text = ''
-
+#     def prepare(self, day):
+#         raise NotImplemented
 
 class ContentOptions(BoxLayout):
-    def __init__(self, popup, **kwargs):
-        super(ContentOptions, self).__init__(**kwargs)
+    # def __init__(self, popup, **kwargs):
+    #     super(ContentOptions, self).__init__(**kwargs)
+    #     self.popup = popup
+    def __init__(self, popup, *args, **kwargs):
         self.popup = popup
+        super(ContentOptions, self).__init__(*args, **kwargs)
 
-    def prepare(self, context):
+    def prepare(self, day):
         self.popup.size_hint = (.6, .6)
 
 class ContentList(BoxLayout):
-    def prepare(self, context):
+    def __init__(self, popup, *args, **kwargs):
+        self.popup = popup
+        super(ContentList, self).__init__(*args, **kwargs)
+
+    def prepare(self, day):
+        self.clear_widgets()
         self.popup.size_hint = (.6, .6)
-        year, month, day = context.date.timetuple()[:3]
+        year, month, day = day.date.timetuple()[:3]
         notes = MEMODB.find(year=year, month=month, day=day)
         for k, note in notes:
             time = note['hour'], note['minute']
             subject = note['subject']
-            entry = DayNoteListEntry((time, subject))
-            self.daynotelist.add_widget(entry)
+            entry = ContentListEntry((time, subject))
+            self.add_widget(entry)
 
 
 class ContentListEntry(BoxLayout):
@@ -376,6 +383,9 @@ class ContentListEntry(BoxLayout):
     def __init__(self, info, **kwargs):
         self.info = info
         super(ContentListEntry, self).__init__(**kwargs)
+
+    def prepare(self, day):
+        self.popup.size_hint = .5, .5
 
 class ContentEntry(BoxLayout):
     # App
@@ -385,40 +395,39 @@ class ContentEntry(BoxLayout):
     # Label
     subject = ObjectProperty()
 
-    def __init__(self, popup, **kwargs):
-        super(ContentEntry, self).__init__(**kwargs)
+    # def __init__(self, *args, **kwargs):
+    #     super(ContentEntry, self).__init__(*args, **kwargs)
+
+    def __init__(self, popup, *args, **kwargs):
         self.popup = popup
+        super(ContentEntry, self).__init__(*args, **kwargs)
         self.notesinput = NotesInputView(self)
 
-    def open(self, context):
-        self.day = context
-        date = self.date = context.date
+    def prepare(self, day):
+        self.subject.text = ''
+        self.day = day
+        date = self.date = day.date
         self.popup.title = date.strftime("%A %d %B %Y")
         self.popup.size_hint = (.6, .6)
         hour, minute = dt.datetime.now().timetuple()[3:5]
         self.time.text = "{:02}:{:02}".format(hour, minute)
-        try:
-            yield self
-        finally:
-            self.subject.text = ''
-            self.popup.content = None
 
     def save(self, *args):
         # !!!: fix, make hour/min mandatory?
         if not self.subject.text:
-            self.popup.dismiss()
             self.app.alert('No subject')
-            return
-        # move to month controller
-        year, month, day = day.date.timetuple()[:3]
-        hour, minute = self.time.get()
-        MEMODB[GET_UNIQUE_KEY()] = {'year': year,
-                                    'month': month,
-                                    'day': day,
-                                    'hour': hour,
-                                    'minute': minute,
-                                    'subject': self.subject.text,
-                                    'notes': self.notesinput.text}
+        else:
+            # move to month controller
+            year, month, day = self.date.timetuple()[:3]
+            hour, minute = self.time.get()
+            MEMODB[GET_UNIQUE_KEY()] = {'year': year,
+                                        'month': month,
+                                        'day': day,
+                                        'hour': hour,
+                                        'minute': minute,
+                                        'subject': self.subject.text,
+                                        'notes': self.notesinput.text}
+            self.day.has_notes = True
         self.popup.dismiss()
 
 
