@@ -119,29 +119,29 @@
 
 <ContentEntry>:
     app: app
-    time: time
-    subject: subject
+    # time: time
+    # subject: subject
     orientation: 'vertical'
     BoxLayout:
         BoxLayout:
             padding: self.width / 4, 0
             orientation: 'vertical'
             Label:
-                id: hourlabel
                 text: 'Start at'
             HourInput:
-                subject: subject
                 id: time
         BoxLayout:
             padding: self.width / 4, 0
             orientation: 'vertical'
             Label:
+                id: duration
                 text: 'Last'
             Spinner:
                 values: ('10m', '20m', '30m', '40m', '50m', '60m')
         BoxLayout:
             orientation: 'vertical'
             Label:
+                id: repeat
                 text: 'Repeat'
             CheckBox:
     BoxLayout:

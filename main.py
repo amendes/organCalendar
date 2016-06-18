@@ -13,6 +13,7 @@ from itertools import dropwhile
 from contextlib import contextmanager
 
 from kivy.app import App
+from kivy.core.window import Window
 from kivy.clock import Clock
 from kivy.uix.label import Label
 from kivy.uix.popup import Popup
@@ -391,9 +392,9 @@ class ContentEntry(BoxLayout):
     # App
     app = ObjectProperty()
     # HourInput
-    time = ObjectProperty()
+    # time = ObjectProperty()
     # Label
-    subject = ObjectProperty()
+    # subject = ObjectProperty()
 
     # def __init__(self, *args, **kwargs):
     #     super(ContentEntry, self).__init__(*args, **kwargs)
@@ -402,30 +403,40 @@ class ContentEntry(BoxLayout):
         self.popup = popup
         super(ContentEntry, self).__init__(*args, **kwargs)
         self.notesinput = NotesInputView(self)
+        self.fields = {}
 
     def prepare(self, day):
-        self.subject.text = ''
         self.day = day
         date = self.date = day.date
         self.popup.title = date.strftime("%A %d %B %Y")
         self.popup.size_hint = (.6, .6)
         hour, minute = dt.datetime.now().timetuple()[3:5]
-        self.time.text = "{:02}:{:02}".format(hour, minute)
+        self.ids.time.text = "{:02}:{:02}".format(hour, minute)
+
+    def on_dismiss(self, *args):
+        self.ids.subject.text = ''
+
+    # def get_field(self, name):
+    #     field = self.fields.get(name)
+    #     if field is None:
+    #         field = getattr(self.ids, field)
+    #         self.fields[name] = field
+    #     return field
 
     def save(self, *args):
         # !!!: fix, make hour/min mandatory?
-        if not self.subject.text:
+        if self.ids.subject.text == '':
             self.app.alert('No subject')
         else:
             # move to month controller
             year, month, day = self.date.timetuple()[:3]
-            hour, minute = self.time.get()
-            MEMODB[GET_UNIQUE_KEY()] = {'year': year,
+            hour, minute = self.ids.time.get()
+            MEMODB[int(time.time())] = {'year': year,
                                         'month': month,
                                         'day': day,
                                         'hour': hour,
                                         'minute': minute,
-                                        'subject': self.subject.text,
+                                        'subject': self.ids.subject.text,
                                         'notes': self.notesinput.text}
             self.day.has_notes = True
         self.popup.dismiss()
